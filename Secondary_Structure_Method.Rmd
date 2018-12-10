@@ -1,0 +1,202 @@
+---
+title: "Secondary_Structure_Method"
+author: "Xiaoting Li"
+date: "12/10/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Mouse dataset
+
+## Geting RNA sequences around initiation sites
+Kozak et.al (1990) suggested the hairpin was placed at the distances of 5, 11, 17, and 35 nucleotides from the CDS beginning in eukaryotic mRNAs. 5' hairpin would also influence the translation initiation. We decided to take the region from 25bp upstream of initiation start site to 35bp downstream to study RNA secondary structures.
+
+```{r eval=FALSE}
+#Loading the libraries and data
+library(rtracklayer)
+library(Biostrings)
+
+Files.Dir <- "~/Desktop/uORF/FINAL_Bed_and_FASTA_Files/"
+uorf.extended <- import(paste(Files.Dir, "uORFs_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+cds.extended <- import(paste(Files.Dir, "CDS_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+
+#Getting the the location of the uORF/CDS start codon
+uorf.start <- sapply(1:length(uorf.extended), function(i)strsplit(names(uorf.extended)[i], split="_")[[1]][5])
+uorf.start <- as.numeric(uorf.start)
+
+cds.start <- sapply(1:length(cds.extended), function(i)strsplit(names(cds.extended)[i], split="_")[[1]][4])
+cds.start <- as.numeric(cds.start)
+
+#Converting CDS sequences to RNA strings; exporting the data
+cds.rna <- RNAStringSet(subseq(cds.extended, cds.start-24, cds.start+35))
+export(cds.rna, paste(Dir, "Secondary_structure/CDS_60bp.fasta", sep=""), format = "fasta")
+
+#Converting uORF sequences to RNA strings; exporting the data
+#(The sequence of uorf[3094] is from -12 to +35)
+uorf.rna <- sapply(1:length(uorf.extended), 
+                   function(i) ifelse(i==3094, as.character(subseq(uorf.extended[i], uorf.start[i]-11, uorf.start[i]+35)), as.character(subseq(uorf.extended[i], uorf.start[i]-24, uorf.start[i]+35))) )
+uorf.rna <- gsub("T", "U", uorf.rna)
+uorf.rna <- RNAStringSet(uorf.rna)
+
+export(uorf.rna, paste(Dir, "Secondary_structure/uORFs_60bp.fasta", sep=""), format = "fasta")
+```
+
+
+## Calculating minimum free energy (MFE) secondary structures using Vienna
+
+Vienna: https://www.tbi.univie.ac.at/RNA/RNAfold.1.html 
+      
+```{bash eval=FALSE}
+Dir=~/Desktop/uORF/Secondary_structure
+cd $Dir
+RNAfold --outfile=CDS_MFE_60bp.txt --noPS < $Dir/CDS_60bp.fasta
+RNAfold --outfile=uORFs_MFE_60bp.txt --noPS < $Dir/uORFs_60bp.fasta
+```
+     
+
+## Normalizing MFE     
+
+MFE is very likely to correlated with length and GC content of the sequences. To normalize for the length and GC content, each  RNA sequence was shuffled 500 times using 'Fasta Shuffle Letters'. MFE was then calculated for the shuffled sequences. The normalized MFE is defined as (original MFE - mean(shuffled MFEs))/sd(shuffled MFEs)
+
+Fasta Shuffle Letters is a utility from the MEME suite of tools: http://meme-suite.org/doc/fasta-shuffle-letters.html
+
+```{bash eval=FALSE}
+fasta-shuffle-letters -kmer 2 -copies 500 $Dir/CDS_60bp.fasta $Dir/CDS_60bp_shuf.fasta
+fasta-shuffle-letters -kmer 2 -copies 500 $Dir/uORFs_60bp.fasta $Dir/uORFs_60bp_shuf.fasta
+
+RNAfold --outfile=CDS_MFE_60bp_shuf.txt --noPS < $Dir/CDS_60bp_shuf.fasta
+RNAfold --outfile=uORFs_MFE_60bp_shuf.txt --noPS < $Dir/uORFs_60bp_shuf.fasta
+```
+   
+## Calculating normalized MFE
+```{r eval=FALSE}
+#Reading in output files
+readMFE <- function(filePath){
+  mfe <- read.delim(filePath, sep = "\t" , header = F, stringsAsFactors = F)
+  df <- data.frame(MFE = mfe$V1[seq(3, nrow(mfe), 3)], stringsAsFactors = F)
+  ind <- sapply(1:nrow(df), function(i) unlist(gregexpr("-|0", df$MFE[i]))[1])
+  df$MFE <- as.numeric(substr(df$MFE, ind, nchar(df$MFE)-1))
+  return(df)
+}
+
+uorf.mfe <- readMFE(filePath = paste(Dir, "Secondary_structure/uORFs_MFE_60bp.txt", sep=""))
+uorf.shuf.mfe <- readMFE(filePath = paste(Dir, "Secondary_structure/uORFs_MFE_60bp_shuf.txt", sep=""))
+cds.mfe <- readMFE(filePath = paste(Dir, "Secondary_structure/CDS_MFE_60bp.txt", sep=""))
+cds.shuf.mfe <- readMFE(filePath = paste(Dir, "Secondary_structure/CDS_MFE_60bp_shuf.txt", sep=""))
+
+
+#Calculating normalized values
+uorf.shuf.mfe$uorf <- rep(1:nrow(uorf.mfe), each=500)
+
+uorf.mfe$shuf.mean <- tapply(uorf.shuf.mfe$MFE, uorf.shuf.mfe$uorf, mean)
+uorf.mfe$shuf.sd <- tapply(uorf.shuf.mfe$MFE, uorf.shuf.mfe$uorf, sd)
+uorf.mfe$MFE.norm <- (uorf.mfe$MFE - uorf.mfe$shuf.mean) /uorf.mfe$shuf.sd
+
+uorf.mfe$uORF <- names(uorf.extended)
+
+write.table(uorf.mfe, paste(Dir, "Secondary_structure/uORFs_MFE_60bp_normalized.txt", sep=""), row.names = F, col.names = T, quote = F)
+
+
+cds.shuf.mfe$cds <- rep(1:nrow(cds.mfe), each=500)
+
+cds.mfe$shuf.mean <- tapply(cds.shuf.mfe$MFE, cds.shuf.mfe$cds, mean)
+cds.mfe$shuf.sd <- tapply(cds.shuf.mfe$MFE, cds.shuf.mfe$cds, sd)
+cds.mfe$MFE.norm <- (cds.mfe$MFE - cds.mfe$shuf.mean) /cds.mfe$shuf.sd
+
+cds.mfe$CDS <- substr(names(cds.extended), 1, 10)
+
+write.table(cds.mfe, paste(Dir, "Secondary_structure/CDS_MFE_60bp_normalized.txt", sep=""), row.names = F, col.names = T, quote = F)
+```
+    
+
+# Human dataset
+
+```{r eval=FALSE}
+library(rtracklayer)
+library(Biostrings)
+
+Files.Dir <- "~/Desktop/uORF/All_HEK293T_Data/"
+uorf.extended <- import(paste(Files.Dir, "HEK293T_uORFs_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+cds.extended <- import(paste(Files.Dir, "HEK293T_CDS_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+
+
+cds.start <- sapply(1:length(cds.extended), function(i)strsplit(names(cds.extended)[i], split="_")[[1]][3])
+cds.start <- as.numeric(cds.start)
+
+uorf.start <- sapply(1:length(uorf.extended), function(i)strsplit(names(uorf.extended)[i], split="_")[[1]][4])
+uorf.start <- as.numeric(uorf.start)
+
+#A few sequences are shorter than 60bp.
+uorf.rna <- sapply( 1:length(uorf.extended), 
+                    function(i) as.character(subseq(uorf.extended[i], max(1,uorf.start[i]-24), uorf.start[i]+35)) )
+uorf.rna.len <- nchar(uorf.rna)
+uorf.rna <- gsub("T", "U", uorf.rna)
+uorf.rna <- RNAStringSet(uorf.rna)
+
+cds.rna <- sapply( 1:length(cds.extended), 
+                   function(i) as.character(subseq(cds.extended[i], max(1,cds.start[i]-24), min(cds.start[i]+35, width(cds.extended[i])))) )
+cds.rna.len <- nchar(cds.rna)
+cds.rna <- gsub("T", "U", cds.rna)
+cds.rna <- RNAStringSet(cds.rna)
+
+
+export(cds.rna, paste(Files.Dir, "HEK293T_CDS_60bp.fasta", sep=""), format = "fasta")
+export(uorf.rna, paste(Files.Dir, "HEK293T_uORFs_60bp.fasta", sep=""), format = "fasta")
+
+```
+
+
+```{bash eval=FALSE}
+Dir=~/Desktop/uORF/All_HEK293T_Data
+cd $Dir
+RNAfold --outfile=HEK293T_CDS_MFE.txt --noPS < $Dir/HEK293T_CDS_60bp.fasta
+RNAfold --outfile=HEK293T_uORFs_MFE.txt --noPS < $Dir/HEK293T_uORFs_60bp.fasta
+```
+
+
+Each sequence was shuffled for 200 times
+```{bash eval=FALSE}
+fasta-shuffle-letters -kmer 2 -copies 200 $Dir/HEK293T_CDS_60bp.fasta $Dir/HEK293T_CDS_shuf.fasta
+fasta-shuffle-letters -kmer 2 -copies 200 $Dir/HEK293T_uORFs_60bp.fasta $Dir/HEK293T_uORFs_shuf.fasta
+
+RNAfold --outfile=HEK293T_CDS_MFE_shuf.txt --noPS < $Dir/HEK293T_CDS_shuf.fasta
+RNAfold --outfile=HEK293T_uORFs_MFE_shuf.txt --noPS < $Dir/HEK293T_uORFs_shuf.fasta
+```
+
+
+```{r eval=FALSE}
+#Reading in files
+uorf.mfe <- readMFE(filePath = paste(Files.Dir, "HEK293T_uORFs_MFE.txt", sep=""))
+uorf.shuf.mfe <- readMFE(filePath = paste(Files.Dir, "HEK293T_uORFs_MFE_shuf.txt", sep=""))
+cds.mfe <- readMFE(filePath = paste(Files.Dir, "HEK293T_CDS_MFE.txt", sep=""))
+cds.shuf.mfe <- readMFE(filePath = paste(Files.Dir, "HEK293T_CDS_MFE_shuf.txt", sep=""))
+
+
+#Calculating normalized values
+uorf.shuf.mfe$uorf <- rep(1:nrow(uorf.mfe), each=200)
+
+uorf.mfe$shuf.mean <- tapply(uorf.shuf.mfe$MFE, uorf.shuf.mfe$uorf, mean)
+uorf.mfe$shuf.sd <- tapply(uorf.shuf.mfe$MFE, uorf.shuf.mfe$uorf, sd)
+uorf.mfe$MFE.norm <- (uorf.mfe$MFE - uorf.mfe$shuf.mean) /uorf.mfe$shuf.sd
+
+uorf.mfe$uORF <- names(uorf.extended)
+uorf.mfe$region_len <- uorf.rna.len
+
+write.table(uorf.mfe[c(5,1,4,6)], paste(Files.Dir, "HEK293T_uORFs_MFE_normalized.txt", sep=""), row.names = F, col.names = T, quote = F)
+
+
+cds.shuf.mfe$cds <- rep(1:nrow(cds.mfe), each=200)
+
+cds.mfe$shuf.mean <- tapply(cds.shuf.mfe$MFE, cds.shuf.mfe$cds, mean)
+cds.mfe$shuf.sd <- tapply(cds.shuf.mfe$MFE, cds.shuf.mfe$cds, sd)
+cds.mfe$MFE.norm <- (cds.mfe$MFE - cds.mfe$shuf.mean) /cds.mfe$shuf.sd
+
+cds.mfe$CDS <- substr(names(cds.extended), 1, 10)
+cds.mfe$region_len <- cds.rna.len
+
+write.table(cds.mfe[c(5,1,4,6)], paste(Files.Dir, "HEK293T_CDS_MFE_normalized.txt", sep=""), row.names = F, col.names = T, quote = F)
+```
+
