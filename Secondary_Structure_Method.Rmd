@@ -12,7 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 # Mouse dataset
 
 ## Geting RNA sequences around initiation sites
-Kozak et.al (1990) suggested the hairpin was placed at the distances of 5, 11, 17, and 35 nucleotides from the CDS beginning in eukaryotic mRNAs. 5' hairpin would also influence the translation initiation. We decided to take the region from 25bp upstream of initiation start site to 35bp downstream to study RNA secondary structures.
+Kozak et.al (1990) suggested the hairpin was placed at the distances of 5, 11, 17, and 35 nucleotides from the CDS beginning in eukaryotic mRNAs. 5' hairpin would also influence the translation initiation.    
+We decided to take the region from 25bp upstream of initiation start site to 35bp downstream to study RNA secondary structures.
 
 ```{r eval=FALSE}
 #Loading the libraries and data
