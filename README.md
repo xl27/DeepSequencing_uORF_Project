@@ -1,6 +1,5 @@
-# DeepSequencing_uORF_Project
-## Title
-Carla Hoge, Gillie Ben-Chorin, Xiaoting Li, Hani Shayya, Will Milligan, Erica Wolin
+# Title
+## Carla Hoge, Gillie Ben-Chorin, Xiaoting Li, Hani Shayya, Will Milligan, Erica Wolin
 
 ### Data Processing
 
@@ -12,3 +11,6 @@ Secondary_Structure_Method.Rmd:
 ### Analysis
 
 ### Models
+
+
+The following packages / versions were used:
