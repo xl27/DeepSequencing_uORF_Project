@@ -1,0 +1,82 @@
+---
+title: "Start_Codon_Usage_Analysis"
+author: "Xiaoting Li"
+date: "December 10, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading data   
+
+```{r message=FALSE, echo=FALSE}
+library(ggplot2)
+library(rtracklayer)
+library(Biostrings)
+
+Dir <- "~/Desktop/uORF/"
+Files.Dir <- "~/Desktop/uORF/FINAL_Bed_and_FASTA_Files/"
+
+cds.te <- read.csv(paste(Dir, "TableS1C.csv", sep=""), stringsAsFactors = F)
+uorf.seq <- import(paste(Files.Dir, "Ingolia_uORFs.fasta", sep=""), format="fasta")
+cds.seq <- import(paste(Files.Dir, "Ingolia_CDS.fasta", sep=""), format="fasta")
+```
+
+## Comparing TE of CDS without uORF, with 1 AUG uORF and with 1 non-AUG uORF
+
+```{r echo=FALSE}
+universe <- intersect(names(cds.seq), cds.te$UCSC.ID)
+cds.te <- cds.te[cds.te$UCSC.ID %in% universe,]
+
+start.df <- data.frame(start.codon = subseq(uorf.seq, 1, 3),
+                       uorf = names(uorf.seq))
+start.df$CDS <- substr(start.df$uorf, 1, 10)
+start.df <- start.df[start.df$CDS %in% universe,]
+
+tb <- as.data.frame(table(start.df$CDS))
+cds.te$uorf.n <- sapply(cds.te$UCSC.ID, function(x) ifelse(x %in% tb$Var1, tb$Freq[tb$Var1 == x], 0))
+
+cds.te.1 <- cds.te[cds.te$uorf.n == 1,]
+cds.te.1$start.codon <- sapply(cds.te.1$UCSC.ID, function(x) start.df$start.codon[start.df$CDS == x])
+
+
+plot.ecdf(cds.te$log2.TE[cds.te$uorf.n == 0], col="red2", xlab = "CDS_log2(TE)")
+plot.ecdf(cds.te.1$log2.TE[cds.te.1$start.codon == "ATG"], col="blue1", add = T)
+plot.ecdf(cds.te.1$log2.TE[cds.te.1$start.codon != "ATG"], col="green3", add = T)
+legend("topleft",  legend = c("without uORF", "with 1 AUG uORF", "with 1 non-AUG uORF"), fill = c("red2", "blue1", "green3"), cex = 0.8)
+```
+
+## Comparing TE of CDS with 1 uORF, grouped by start codon of uORF
+
+```{r echo=FALSE}
+
+ggplot(cds.te.1, aes(x=start.codon, y=log2.TE)) +
+  geom_boxplot() +
+  annotate("text", x=1:9, y=3, label = table(cds.te.1$start.codon)) +
+  labs(y = "CDS_log2(TE)", x = "uORF_Start_Codon", title = "CDS with 1 uORF") +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Comparing TE of CDS grouped by #uORF
+
+```{r echo=FALSE}
+cds.te$uorf.g <- vector(length = nrow(cds.te))
+cds.te$uorf.g[cds.te$uorf.n == 0] <- "uORF# = 0"
+cds.te$uorf.g[cds.te$uorf.n == 1] <- "uORF# = 1"
+cds.te$uorf.g[cds.te$uorf.n == 2] <- "uORF# = 2"
+cds.te$uorf.g[cds.te$uorf.n == 3] <- "uORF# = 3"
+cds.te$uorf.g[cds.te$uorf.n >= 4] <- "uORF# >=4"
+
+ggplot(cds.te, aes(x=uorf.g, y=log2.TE)) +
+  geom_boxplot() +
+  labs(y = "CDS_log2(TE)", x = NULL) +
+  annotate("text", x=1:5, y=9, label = table(cds.te$uorf.g)) +
+  theme_light()
+```
+     
+```{r echo=FALSE}
+oneway.test(log2.TE ~ uorf.g, data = cds.te)
+```

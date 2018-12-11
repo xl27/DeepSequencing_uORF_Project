@@ -1,0 +1,105 @@
+---
+title: "Initiation_Sequence_Context_Analysis"
+author: "Xiaoting Li"
+date: "December 10, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading data   
+   
+CDS sequences: 100bp around start sites  
+uORF sequences: 100bp around start sites  
+```{r message=FALSE, echo=FALSE}
+library(ggseqlogo)
+library(ggplot2)
+library(rtracklayer)
+library(Biostrings)
+
+Dir <- "~/Desktop/uORF/"
+Files.Dir <- "~/Desktop/uORF/FINAL_Bed_and_FASTA_Files/"
+
+uorf.extended <- import(paste(Files.Dir, "uORFs_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+cds.extended <- import(paste(Files.Dir, "CDS_100bpwindows_aroundstart.fasta", sep=""), format="fasta")
+```
+   
+## uORF start codon usage   
+     
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+uorf.start <- sapply(1:length(uorf.extended), function(i)strsplit(names(uorf.extended)[i], split="_")[[1]][5])
+uorf.start <- as.numeric(uorf.start)
+
+uorf.start.codon <- as.character(subseq(uorf.extended, uorf.start+1, uorf.start+3))
+table(uorf.start.codon) 
+
+ggplot(data.frame(uorf.start.codon), aes(uorf.start.codon)) +
+  geom_histogram(stat="count") +
+  theme_light()
+```
+    
+Probability     
+```{r echo=FALSE}
+ggseqlogo(uorf.start.codon, method = "probability")
+``` 
+    
+Information content       
+```{r echo=FALSE}
+ggseqlogo(uorf.start.codon)
+```
+    
+
+## Sequence context around  initiation start codon   
+     
+###CDS initiation sequence context   
+    
+Kozak consensus sequence:
+https://en.wikipedia.org/wiki/Kozak_consensus_sequence   
+    
+```{r echo=FALSE}
+cds.start <- sapply(1:length(cds.extended), function(i)strsplit(names(cds.extended)[i], split="_")[[1]][4])
+cds.start <- as.numeric(cds.start)
+
+cds.ini.minus <- as.character(subseq(cds.extended, cds.start-9, cds.start))
+cds.ini.plus <- as.character(subseq(cds.extended, cds.start+4, cds.start+13))
+cds.ini <- paste(cds.ini.minus, "   ", cds.ini.plus, sep="")
+ggseqlogo(cds.ini, method = 'bits') +
+  annotate("text", x=11:13, y=0.02, label =c("A", "T", "G"), size=5) +
+  labs(title = "CDS") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+   
+###uORF initiation sequence context
+
+All uORFs
+```{r echo=FALSE}
+uorf.ini.minus <- as.character(subseq(uorf.extended, uorf.start-9, uorf.start))
+uorf.ini.plus <- as.character(subseq(uorf.extended, uorf.start+4, uorf.start+13))
+uorf.ini <- paste(uorf.ini.minus, "   ", uorf.ini.plus, sep="")
+ggseqlogo(uorf.ini, method = 'bits') +
+  annotate("text", x=12, y=0.02, label = "start", size=4) +
+  annotate("text", x=12, y=0.01, label = "codon", size=4) +
+  labs(title = "all uORFs") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+    
+AUG start codon uORFs vs. Non-AUG start codon uORFs 
+```{r echo=FALSE}
+uorf.ini.list1 <- list(ATG = uorf.ini[which(uorf.start.codon == "ATG")], Non.ATG = uorf.ini[which(uorf.start.codon != "ATG")])
+
+ggseqlogo(uorf.ini.list1, ncol = 1)
+```
+     
+uORFs grouped by start codon     
+```{r echo=FALSE}
+# get rid of AAG and AGG: few uORFs
+codons <- unique(uorf.start.codon)
+codons <- codons[1:8]
+uorf.ini.list <- lapply(1:length(codons), function(i) uorf.ini[uorf.start.codon == codons[i]])
+names(uorf.ini.list) <- codons
+
+ggseqlogo(uorf.ini.list, ncol = 2)
+```
+
