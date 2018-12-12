@@ -47,11 +47,18 @@ plot.ecdf(cds.te.1$log2.TE[cds.te.1$start.codon == "ATG"], col="blue1", add = T)
 plot.ecdf(cds.te.1$log2.TE[cds.te.1$start.codon != "ATG"], col="green3", add = T)
 legend("topleft",  legend = c("without uORF", "with 1 AUG uORF", "with 1 non-AUG uORF"), fill = c("red2", "blue1", "green3"), cex = 0.8)
 ```
+Student's t-test
+```{r echo=FALSE}
+t.test(cds.te.1$log2.TE[cds.te.1$start.codon == "ATG"], cds.te.1$log2.TE[cds.te.1$start.codon != "ATG"])
+
+t.test(cds.te.1$log2.TE[cds.te.1$start.codon == "ATG"], cds.te$log2.TE[cds.te$uorf.n == 0])
+
+t.test(cds.te.1$log2.TE[cds.te.1$start.codon != "ATG"], cds.te$log2.TE[cds.te$uorf.n == 0])
+```
 
 ## Comparing TE of CDS with 1 uORF, grouped by start codon of uORF
 
 ```{r echo=FALSE}
-
 ggplot(cds.te.1, aes(x=start.codon, y=log2.TE)) +
   geom_boxplot() +
   annotate("text", x=1:9, y=3, label = table(cds.te.1$start.codon)) +
@@ -80,3 +87,26 @@ ggplot(cds.te, aes(x=uorf.g, y=log2.TE)) +
 ```{r echo=FALSE}
 oneway.test(log2.TE ~ uorf.g, data = cds.te)
 ```
+
+## Analysis with dominant uORFs
+```{r echo=FALSE}
+dom.df <- read.table(paste(Dir, "dominant_uORFs.txt", sep=""), header = T, stringsAsFactors = F)
+dom.df <- dom.df[dom.df$transcript %in% universe,]
+
+dom.df$log2.TE <- unlist(sapply(dom.df$transcript, function(x) cds.te$log2.TE[cds.te$UCSC.ID == x]))
+dom.df$start.codon <- sapply(dom.df$uorf.dominant, function(x) start.df$start.codon[start.df$uorf == x])
+
+with1.df <- cds.te.1[c(5,9)]
+with1.df$type <- "CDS with single uORF"
+dom.df <- dom.df[c(5,6)]
+dom.df$type <- "CDS with dominant uORF"
+df <- rbind(with1.df, dom.df)
+df$ifAUG <- ifelse(df$start.codon == "ATG", "AUG uORF", "Non-AUG uORF")
+
+ggplot(df, aes(ifAUG, log2.TE, fill=type)) +
+  geom_boxplot() +
+  labs(x=NULL, y="CDS_log2(TE)", fill=NULL) +
+  theme_light() +
+  theme(legend.position="top")
+```
+
