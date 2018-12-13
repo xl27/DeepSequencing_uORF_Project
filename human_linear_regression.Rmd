@@ -1,0 +1,292 @@
+---
+title: "human_lr"
+author: "William Milligan"
+date: "November 26, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data
+
+```{r, echo=FALSE}
+
+## load CDS datasets
+library(readr)
+CDS_counts_Ingolia_RPKM <-  read_delim("C:/Users/William Milligan/Desktop/DeepSeqProject/HEK293T_CDS_CHX_and_mRNA_counts.tsv", "\t", escape_double = FALSE, trim_ws = TRUE)
+colnames(CDS_counts_Ingolia_RPKM)[1] = 'transcript'
+CDS_counts_Ingolia_RPKM$TE <- log((CDS_counts_Ingolia_RPKM$CDS_CHX_Counts/CDS_counts_Ingolia_RPKM$CDS_RNAseq_Counts),2)
+
+## NEED TO GET CDS GC CONTENT :(
+CDS_Prop <- read.delim("C:/Users/William Milligan/Desktop/DeepSeqProject/CDS_Prop_hum.txt", stringsAsFactors=FALSE)
+colnames(CDS_Prop)[1]='transcript'
+
+CDS_info <- merge(CDS_counts_Ingolia_RPKM,CDS_Prop,by='transcript')
+
+## Load uORF datasets and fix names
+
+# Length, 
+uORF_counts <- read_delim("C:/Users/William Milligan/Desktop/DeepSeqProject/HEK293T_uORF_CHXcounts.tsv", 
+    "\t", escape_double = FALSE, trim_ws = TRUE)
+colnames(uORF_counts)
+
+# uORFS_distance_to_CDS
+uORFs_distance_toCDSstart <- read.delim("C:/Users/William Milligan/Desktop/DeepSeqProject/HEK293T_uORFs_distance_toCDSstart.tsv",stringsAsFactors = FALSE)
+uORFs_distance_toCDSstart$uORF_distance_to_start <- (vapply(strsplit(uORFs_distance_toCDSstart$uORF_ID,split="_",fixed = TRUE), `[`, 2, FUN.VALUE=character(1)))
+uORFs_distance_toCDSstart$uORF_distance_to_start <- as.numeric(uORFs_distance_toCDSstart$uORF_distance_to_start)
+uORFs_distance_toCDSstart$frame <- (uORFs_distance_toCDSstart$uORF_distance_to_start %% 3) == 0
+uORFs_distance_toCDSstart <- uORFs_distance_toCDSstart[,c("uORF_ID","dist_uORFstart_to_CDS","uORF_distance_to_start","frame")]
+colnames(uORFs_distance_toCDSstart)
+
+# uORF start codon
+HEK293T_uORFs <- read.table("C:/Users/William Milligan/Desktop/DeepSeqProject/HEK293T_uORFs.fasta", quote="\"", comment.char="", stringsAsFactors=FALSE)
+seq = 1:(dim(HEK293T_uORFs)[1]/2)*2
+names = 1:(dim(HEK293T_uORFs)[1]/2)*2-1
+uORF_Prop = data.frame(uORF = HEK293T_uORFs[names,1], seq = HEK293T_uORFs[seq,1],stringsAsFactors = FALSE)
+uORF_Prop$Codon <- substring(uORF_Prop$seq,1,3)=='ATG'
+colnames(uORF_Prop)[1] = 'uORF_ID'
+uORF_Prop$uORF_ID <- (vapply(strsplit(uORF_Prop$uORF_ID,split=">",fixed = TRUE), `[`, 2, FUN.VALUE=character(1)))
+colnames(uORF_Prop)
+
+# GC
+uORF_GC <- read_delim("C:/Users/William Milligan/Desktop/DeepSeqProject/uORF_Prop_hum.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+colnames(uORF_GC)[3] = 'uORF_ID'
+uORF_GC<-uORF_GC[,c('uORF_ID','GC')]
+colnames(uORF_GC)
+#uORF_info <- cbind(uORF_Prop,uORF_dist_and_MFE)
+
+## Merge uORF Info
+uORF_info <- merge(uORFs_distance_toCDSstart,uORF_counts,by='uORF_ID')
+colnames(uORF_info)
+uORF_info <- merge(uORF_info,uORF_Prop,by='uORF_ID')
+uORF_info <- merge(uORF_info,uORF_GC,by='uORF_ID')
+```
+
+Oh wait also do GC content
+
+```{r}
+library(stringr)
+## Merge all info together
+colnames(CDS_info) = paste0('CDS_',colnames(CDS_info))
+colnames(CDS_info)
+colnames(uORF_info)
+all_info <- merge(uORF_info,CDS_info,by.x='transcript',by.y='CDS_transcript')
+colnames(all_info)
+dim(all_info)
+```
+
+
+## Extracting Only Useful Info
+
+We have lots of extra columns so lets only keep the variables we like & get marginal uORF GC content
+
+```{r}
+keeps_uORF <- c("dist_uORFstart_to_CDS","Length_uORF","uORF_distance_to_start","frame","Codon","GC")
+keeps_CDS <- c("CDS_Length_CDS","CDS_GC","CDS_TE")
+keeps <- c(keeps_uORF,keeps_CDS)
+
+potential_outliers <- which(all_info$CDS_TE <= -3 | all_info$CDS_TE > 3) 
+all_info$CDS_TE[potential_outliers] <- NA
+all_info <- all_info[complete.cases(all_info),]
+
+# ONLY KEEP TRANSCRIPTS WITH ONE UORF
+dominant_uORFs <- read_table2("C:/Users/William Milligan/Desktop/DeepSeqProject/dominant_uORFs.txt")
+kept_info <- all_info[which(all_info$uORF_ID %in% dominant_uORFs$uorf.dominant),keeps]
+
+duplicated_uORFS<-all_info$transcript[duplicated(all_info$transcript)]
+kept_info <- all_info[which(!(all_info$transcript %in% all_info$transcript[duplicated(all_info$transcript)])),keeps]
+kept_info<-kept_info[complete.cases(kept_info),]
+
+
+kept_df <- as.data.frame(kept_info)
+kept_df <- kept_df[complete.cases(kept_df),]
+colnames(kept_df)[dim(kept_df)[2]] <- "TE"
+colnames(kept_df)[colnames(kept_df)=='CDS_Length_CDS']='CDS_Length'
+colnames(kept_df)
+```
+
+# Correlations
+```{r}
+# get correlation matrix
+# put info in a nice order
+kept_df2 <- kept_df[,c(keeps_uORF,"CDS_Length","CDS_GC","TE")]
+cormat <- round(cor(kept_df2),2)
+library(reshape2)
+
+# Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+library("Hmisc")
+sig_corr<-rcorr(as.matrix(kept_df2), type = "pearson")
+
+# Get upper triangle of the correlation matrix
+get_sig_tri <- function(cormat){
+  sig_corr = cormat$P
+  r_corr = cormat$r
+  
+  r_corr[lower.tri(r_corr)]<- NA
+  r_corr[sig_corr > 0.05] <- NA
+  return(r_corr)
+}
+
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+
+sig_cormat <- round(get_sig_tri(sig_corr),2)
+diag(sig_cormat) <- NA
+
+library(ggplot2)
+# Melt the correlation matrix
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+melted_sig_cormat <- melt(sig_cormat, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+   theme(axis.text.y = element_text(vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+print(ggheatmap)
+
+ggheatmap + 
+geom_text(data=melted_sig_cormat,aes(Var2, Var1, label = value), color = "black", size = 5) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+
+
+ggsave('C:\\Users\\William Milligan\\Desktop\\DeepSeqProject\\human_correlation_heatmap.jpeg',plot = last_plot(),device="jpeg")
+```
+
+OH NO START CODON CORRELATED WITH OTHER STUFFF :(
+```{r}
+#get marginal codon
+marginal_codon <- residuals(lm(Codon ~.,data = kept_df2[,which(!(colnames(kept_df2)=='TE'))]))
+colnames(kept_df2)
+
+cor.test(marginal_codon,kept_df2$TE)
+
+#get marginal gc
+marginal_gc <- residuals(lm(GC ~.,data = kept_df2[,which(!(colnames(kept_df2)=='TE'))]))
+cor.test(marginal_gc,kept_df2$TE)
+
+#get marginal frame
+marginal_frame <- residuals(lm(frame ~.,data = kept_df2[,which(!(colnames(kept_df2)=='TE'))]))
+cor.test(marginal_frame,kept_df2$TE)
+
+#get marginal dist
+marginal_dist <- residuals(lm(dist_uORFstart_to_CDS ~.,data = kept_df2[,which(!(colnames(kept_df2)=='TE' ))]))
+cor.test(marginal_dist,kept_df2$TE)
+
+#get marginal dist
+marginal_distnt <- residuals(lm(uORF_distance_to_start~.,data = kept_df2[,which(!(colnames(kept_df2)=='TE' ))]))
+cor.test(marginal_distnt,kept_df2$TE)
+
+```
+## LINEAR MODEL CONSTRUCTION
+```{r}
+colnames(kept_df2)
+
+library("leaps")
+model_select <- regsubsets(TE~.,kept_df2,nvmax = 11,nbest=8)
+summary_model <- summary(model_select)
+top <- order(summary_model$bic,decreasing = FALSE)
+
+jpeg('adjr2.jpeg')
+plot(summary_model$bic[top],xlab='Model Index',ylab='BIC')
+par(new = TRUE)
+plot(summary_model$adjr2[top],xlab=NA,ylab=NA,col='red',axes=FALSE)
+axis(side=4)
+mtext(side = 4, line = 2, 'Adjusted R2')
+dev.off()
+
+jpeg('bic_models.jpeg')
+plot(model_select,scale='bic')
+dev.off()
+
+best_model = summary_model$which[top[1],]
+best_model = names(best_model[which(best_model)])[-1]
+best_model[best_model == 'CodonTRUE'] = 'Codon'
+best_model[best_model == "`Init Codon [nt]`"] = "Init Codon [nt]"
+
+best_model <- c('Codon','GC','CDS_GC','CDS_Length')
+best_model_lm <- lm(TE~.,data=kept_df2[,c('TE',best_model)])
+summary(best_model_lm)
+
+use_for_model = kept_df2[,c('TE',best_model)]
+test_index <- sample(1:dim(use_for_model)[1],as.integer(dim(use_for_model)[1]*0.2))
+test <- use_for_model[test_index,]
+train <- use_for_model[-test_index,]
+
+temp_lm <- lm(TE~.,train)
+summary(temp_lm)
+predictions <- predict(temp_lm,test)
+cor.test(test$TE,predictions)
+
+
+just_cds <- lm(TE~.,use_for_model[,c('TE','CDS_GC','CDS_Length')])
+cds_predict <- predict(just_cds,test)
+cor.test(test$TE,cds_predict)
+summary(just_cds)
+
+jpeg('human_model_performance.jpeg')
+plot(test$TE,predictions,xlab='Log 2 Translational Efficiency',col='red2',pch=16)
+points(test$TE,cds_predict,col='black',pch=16)
+abline(lm(test$TE~cds_predict),col='black')
+abline(lm(test$TE~predictions),col='red')
+legend('topleft',c('uORF Model','CDS Model'),pch = 16,col=c('red','black'))
+dev.off()
+```
+
+```{r}
+
+alt_uorfs <- kept_df2[which(!(kept_df2$Codon)),]
+atg_uorfs <- kept_df2[which(kept_df2$Codon),]
+no_uorfs <- CDS_info[which(!(CDS_info$CDS_transcript %in% all_info$transcript)),]
+no_uorfs[is.infinite(no_uorfs$CDS_TE),] <- NA
+no_uorfs <- no_uorfs[complete.cases(no_uorfs),]
+
+alt_ecdf <- ecdf(alt_uorfs$TE)
+atg_ecdf <- ecdf(atg_uorfs$TE)
+non_ecdf <- ecdf(no_uorfs$CDS_TE)
+jpeg('Human_TE_ecdf.jpeg')
+plot(non_ecdf,col='red',xlab = 'Log 2 CDS TE')
+plot(atg_ecdf,add=TRUE,col='blue')
+plot(alt_ecdf,add=TRUE,col='green')
+dev.off()
+```
+
+```{r}
+library(ggseqlogo)
+
+start_codons <- substring(all_info$seq,1,3)
+jpeg('Human_uORF_start_motif.jpeg')
+ggseqlogo(start_codons,method = 'prob')
+dev.off()
+```
+
+
+
+
+
+
