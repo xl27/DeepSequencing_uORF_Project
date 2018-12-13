@@ -1,4 +1,4 @@
-# Title
+# DeepSequencing Project: Using uORF features to predict translation efficiency 
 ## Carla Hoge, Gillie Ben-Chorin, Xiaoting Li, Hani Shayya, Will Milligan, Erica Wolin
 
 ### Data Processing
@@ -13,4 +13,4 @@ All scripts are provided to download, process and analyze the data used for in o
 ### Models
 
 
-The following packages / versions were used:
+
