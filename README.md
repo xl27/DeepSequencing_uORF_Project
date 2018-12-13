@@ -1,16 +1,8 @@
-# DeepSequencing Project: Using uORF features to predict translation efficiency 
-## Carla Hoge, Gillie Ben-Chorin, Xiaoting Li, Hani Shayya, Will Milligan, Erica Wolin
+# DeepSequencing Project
+## Using uORF features to predict translation efficiency 
 
-### Data Processing
+### Carla Hoge, Gillie Ben-Chorin, Xiaoting Li, Hani Shayya, Will Milligan, Erica Wolin
+
 
 All scripts are provided to download, process and analyze the data used for in our projects. Absolute file paths have been removed and a generic descriptor ('file.path'), has been used instead.
-
-### Sequence Properties
-
-
-### Analysis
-
-### Models
-
-
 
